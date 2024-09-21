@@ -2,3 +2,5 @@
 __pycache__/
 *.py[cod]
 *$py.class
+
+django-app-secrets.yaml
