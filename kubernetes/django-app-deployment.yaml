@@ -23,26 +23,10 @@ spec:
         - name: django-app
           image: django_app:latest
           imagePullPolicy: IfNotPresent
-          env:
-            - name: SECRET_KEY
-              valueFrom:
-                secretKeyRef:
-                  name: django-secrets
-                  key: SECRET_KEY
-            - name: DATABASE_URL
-              valueFrom:
-                secretKeyRef:
-                  name: django-secrets
-                  key: DATABASE_URL
-            - name: DEBUG
-              valueFrom:
-                configMapKeyRef:
-                  name: django-config
-                  key: DEBUG
-            - name: ALLOWED_HOSTS
-              valueFrom:
-                secretKeyRef:
-                  name: django-secrets
-                  key: ALLOWED_HOSTS
+          envFrom:
+            - secretRef:
+                name: django-secrets
+            - configMapRef:
+                name: django-config
           ports:
             - containerPort: 8000

@@ -143,7 +143,19 @@ $ docker compose build web
     ```bash
     kubectl apply -f path/to/ingress.yaml
     ```
-4. Пропишите, если нужно, ваш хост в файле hosts вашей ОС:
+4. (опционально) Пропишите, если нужно, ваш хост в файле hosts вашей ОС:
     ```hosts
     <minikube_ip> your_host.com
+    ```
+
+## Регулярная очистка сессий с помощью CronJob
+
+1. Создайте CronJob с помощью команды:
+    ```bash
+    kubectl apply -f path/to/cronjob.yaml
+    ```
+    Эта задача будет производить очистку сессий в 0:00 каждого 7, 14, 21 и 28 числа каждого месяца (примерно раз в неделю).
+2. (опционально) Вы можете запустить задачу в любое время с помощью
+    ```bash
+    kubectl create job --from=cronjob/<cronjob_name> <job_name>
     ```
