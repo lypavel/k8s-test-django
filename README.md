@@ -75,3 +75,75 @@ $ docker compose build web
 `ALLOWED_HOSTS` -- настройка Django со списком разрешённых адресов. Если запрос прилетит на другой адрес, то сайт ответит ошибкой 400. Можно перечислить несколько адресов через запятую, например `127.0.0.1,192.168.0.1,site.test`. [Документация Django](https://docs.djangoproject.com/en/3.2/ref/settings/#allowed-hosts).
 
 `DATABASE_URL` -- адрес для подключения к базе данных PostgreSQL. Другие СУБД сайт не поддерживает. [Формат записи](https://github.com/jacobian/dj-database-url#url-schema).
+
+
+### Добавление переменных окружения в Kubernetes кластер
+
+1. Создайте `YAML` файл c чувствительными переменными:
+
+    ```yaml
+    apiVersion: v1
+    kind: Secret
+    metadata:
+      name: django-secrets
+    type: Opaque
+    data:
+      SECRET_KEY: 'base64_secret_key'
+      DATABASE_URL: 'base64_database_url'
+      ALLOWED_HOSTS: 'base64_allowed_hosts'
+    ```
+
+Все значения переменных должны быть закодированы в `BASE64`.
+
+2. Создайте `YAML` файл с обычными переменными:
+
+    ```yaml
+    apiVersion: v1
+    kind: ConfigMap
+    metadata:
+      name: django-config
+    data:
+      DEBUG: 'False'
+    ```
+
+3. Создайте сущности `Secret` и `ConfigMap` в вашем кластере:
+    ```bash
+    kubectl apply -f path/to/secrets.yaml
+    kubectl apply -f path/to/configmap.yaml
+    ```
+  
+## Создание Ingress
+
+1. Пропишите свою конфигурацию в YAML файл:
+    ```yaml
+    apiVersion: networking.k8s.io/v1
+    kind: Ingress
+    metadata:
+      name: django-app-ingress
+      annotations:
+        nginx.ingress.kubernetes.io/rewrite-target: /
+    spec:
+      rules:
+        - host: star-burger.test  # ваш хост
+          http:
+            paths:
+              - path: /
+                pathType: Prefix
+                backend:
+                  service:
+                    name: django-app-service  # ваш ClusterIP сервис для deployment
+                    port:
+                      number: 8000  # порт, на котором работает сервис
+    ```
+2. Подключите аддон ingress для вашего кластера:
+    ```bash
+    minikube addons enable ingress
+    ```
+3. Создайте сущность `Ingress` в вашем кластере
+    ```bash
+    kubectl apply -f path/to/ingress.yaml
+    ```
+4. Пропишите, если нужно, ваш хост в файле hosts вашей ОС:
+    ```hosts
+    <minikube_ip> your_host.com
+    ```
