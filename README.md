@@ -354,6 +354,12 @@ $ docker compose build web
     ```bash
     yc managed-kubernetes cluster get-credentials --id cat528346gdueh53ts39 --external
     ```
+4. Измените ваш текущий `namespace` с `default` на тот, который настроил для вас администратор.
+    ```bash
+    kubectl config set-context --current --namespace=<your_namespace>
+    ```
+
+    или при каждом запуске `kubectl` добавляйте параметр `--namespace=<your_namespace>` или `-n <your_namespace>`.
 
 ### Запуск nginx
 
@@ -416,7 +422,7 @@ $ docker compose build web
     ```bash
     kubectl apply -f path/to/nginx/service.yaml
     ```
-5. Nginx будет доступен по вашему домену. Обычно это домен вида `<your_namespace>.sirius-k8s.dvmn.org`
+5. Nginx будет доступен по вашему домену. Обычно это домен вида `<your_namespace>.sirius-k8s.dvmn.org`.
 
 
 
