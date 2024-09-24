@@ -76,7 +76,7 @@ $ docker compose build web
 
 `DATABASE_URL` -- адрес для подключения к базе данных PostgreSQL. Другие СУБД сайт не поддерживает. [Формат записи](https://github.com/jacobian/dj-database-url#url-schema).
 
-## Развёртывание сайта в Kubernetes кластере
+## Развёртывание сайта в локальном Minikube кластере
 
 ### Установка postgreSQL в кластер
 
@@ -343,5 +343,83 @@ $ docker compose build web
     ```bash
     kubectl create job --from=cronjob/<cronjob_name> <job_name>
     ```
+
+## Развёртывание dev-версии в кластере Yandex Cloud
+
+### Подготовка к развёртыванию
+
+1. Получите доступ к кластеру у его администратора.
+2. Установите и инициализируйте [Yandex Cloud CLI](https://yandex.cloud/ru/docs/cli/quickstart#install).
+3. Добавьте учётные данные кластера в конфигурационный файл kubectl:
+    ```bash
+    yc managed-kubernetes cluster get-credentials --id cat528346gdueh53ts39 --external
+    ```
+
+### Запуск nginx
+
+1. Создайте YAML конфигурацию для `Deployment`
+    ```yaml
+    apiVersion: apps/v1
+    kind: Deployment
+    metadata:
+      name: nginx-deployment
+      labels:
+        app.kubernetes.io/name: nginx
+        app.kubernetes.io/instance: nginx-dev
+        app.kubernetes.io/version: '1.0.0'
+        app.kubernetes.io/component: backend
+        app.kubernetes.io/part-of: k8s-test-django
+        app.kubernetes.io/managed-by: manual
+    spec:
+      replicas: 1
+      selector:
+        matchLabels:
+          app: nginx
+      template:
+        metadata:
+          labels:
+            app: nginx
+        spec:
+          containers:
+            - name: nginx
+              image: nginx:1.14.2
+              imagePullPolicy: IfNotPresent
+              ports:
+                - containerPort: 80
+    ```
+
+2. Создайте сущность `Deployment`
+    ```bash
+    kubectl apply -f path/to/nginx/deployment.yaml
+    ```
+
+3. Создайте YAML конфигурацию для `Service`
+    ```yaml
+    apiVersion: v1
+    kind: Service
+    metadata:
+      name: nginx-service
+      labels:
+        app.kubernetes.io/name: nginx-service
+        app.kubernetes.io/instance: nginx-service-dev
+    spec:
+      selector:
+        app: nginx
+      ports:
+        - protocol: TCP
+          port: 80
+          targetPort: 80
+          nodePort: 30331  # NodePort, на который ALB распределяет запросы от вашего домена
+      type: NodePort
+    ```
+4. Создайте сущность `Service`
+    ```bash
+    kubectl apply -f path/to/nginx/service.yaml
+    ```
+5. Nginx будет доступен по вашему домену. Обычно это домен вида `<your_namespace>.sirius-k8s.dvmn.org`
+
+
+
+
 ***
 Код написан в учебных целях — это урок в курсе по Python и веб-разработке на сайте [Devman](https://dvmn.org).

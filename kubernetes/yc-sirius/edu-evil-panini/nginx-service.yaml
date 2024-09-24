@@ -1,0 +1,16 @@
+apiVersion: v1
+kind: Service
+metadata:
+  name: nginx-service
+  labels:
+    app.kubernetes.io/name: nginx-service
+    app.kubernetes.io/instance: nginx-service-dev
+spec:
+  selector:
+    app: nginx
+  ports:
+    - protocol: TCP
+      port: 80
+      targetPort: 80
+      nodePort: 30331
+  type: NodePort
