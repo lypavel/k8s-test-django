@@ -359,7 +359,81 @@ $ docker compose build web
     kubectl config set-context --current --namespace=<your_namespace>
     ```
 
-    или при каждом запуске `kubectl` добавляйте параметр `--namespace=<your_namespace>` или `-n <your_namespace>`.
+    **или при каждом дальнейшем запуске `kubectl` добавляйте параметр `--namespace=<your_namespace>` или `-n <your_namespace>`.**
+
+
+### Подключение к PostgreSQL
+
+1. Проверьте, присутствует ли в вашем `namespace` секрет с ssl сертификатом для PostgreSQL. Если присутствует, переходите сразу к п.4. Если нет, то получите ваш ssl сертификат [по этой инструкции](https://yandex.cloud/ru/docs/managed-postgresql/operations/connect#get-ssl-cert).
+2. Создайте YAML конфигурацию для `Secret` с сертификатом:
+    ```yaml
+    apiVersion: v1
+    kind: Secret
+    metadata:
+      name: ssl-cert-secret
+    data:
+      root.crt: <base64_encoded_ssl_certificate>
+    ```
+4. Создайте сущность `Secret` с помощью:
+    ```bash
+    kubectl apply -f path/to/secret.yaml
+    ```
+5. Создайте YAML конфигурацию для `Deployment` пода с Ubuntu, с помощью которого вы будете подключаться к СУБД.
+    ```yaml
+    apiVersion: apps/v1
+    kind: Deployment
+    metadata:
+      name: ubuntu-deployment
+      labels:
+        app.kubernetes.io/name: ubuntu
+        app.kubernetes.io/instance: ubuntu-psql-ssl-test
+        app.kubernetes.io/version: '1.0.0'
+        app.kubernetes.io/component: backend
+        app.kubernetes.io/part-of: k8s-test-django
+        app.kubernetes.io/managed-by: manual
+    spec:
+      replicas: 1
+      selector:
+        matchLabels:
+          app: ubuntu
+      template:
+        metadata:
+          labels:
+            app: ubuntu
+        spec:
+          volumes:
+            - name: ssl-cert-volume
+              secret:
+                secretName: ssl-cert-secret  # название сущности Secret с сертификатом
+                defaultMode: 384  # обязательные права rw------- для сертификатов
+          containers:
+          - image: ubuntu:22.04
+            name: ubuntu
+            command: ["/bin/sh"]
+            args:
+              - -c
+              - |
+                apt-get update &&
+                apt-get install -y postgresql-client &&
+                sleep 86400
+            imagePullPolicy: IfNotPresent
+            volumeMounts:
+              - name: ssl-cert-volume
+                readOnly: true
+                mountPath: "/root/.postgresql"  # директория, куда будет смонтирован том с сертификатом.
+    ```
+6. Создайте сущность `Deployment` с помощью:
+    ```bash
+    kubectl apply -f path/to/ubuntu/deployment.yaml
+    ```
+7. Зайдите в shell контейнера с помощью:
+    ```bash
+    kubectl exec -itn <your_namespace> <pod_name> -c <container_name> -- sh -c "clear; (bash || ash || sh)"
+    ```
+8. Подключитесь к СУБД:
+    ```bash
+    psql "host=<postgres_host> port=<postgres_port> dbname=<db_name> user=<user_name> password=<user_password>"
+    ```
 
 ### Запуск nginx
 

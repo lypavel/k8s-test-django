@@ -4,3 +4,4 @@ __pycache__/
 *$py.class
 
 django-app-secrets.yaml
+ssl-cert-secret.yaml

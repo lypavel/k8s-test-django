@@ -1,0 +1,41 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: ubuntu-deployment
+  labels:
+    app.kubernetes.io/name: ubuntu
+    app.kubernetes.io/instance: ubuntu-psql-ssl-test
+    app.kubernetes.io/version: '1.0.0'
+    app.kubernetes.io/component: backend
+    app.kubernetes.io/part-of: k8s-test-django
+    app.kubernetes.io/managed-by: manual
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: ubuntu
+  template:
+    metadata:
+      labels:
+        app: ubuntu
+    spec:
+      volumes:
+        - name: ssl-cert-volume
+          secret:
+            secretName: ssl-cert-secret
+            defaultMode: 384
+      containers:
+      - image: ubuntu:22.04
+        name: ubuntu
+        command: ["/bin/sh"]
+        args:
+          - -c
+          - |
+            apt-get update &&
+            apt-get install -y postgresql-client &&
+            sleep 86400
+        imagePullPolicy: IfNotPresent
+        volumeMounts:
+          - name: ssl-cert-volume
+            readOnly: true
+            mountPath: "/root/.postgresql"
