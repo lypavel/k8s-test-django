@@ -1,0 +1,16 @@
+apiVersion: v1
+kind: Service
+metadata:
+  name: django-app-service
+  labels:
+    app.kubernetes.io/name: django-app-service
+    app.kubernetes.io/instance: django-app-service-dev
+spec:
+  selector:
+    app: django-app
+  ports:
+    - protocol: TCP
+      port: 80
+      targetPort: 80
+      nodePort: 30331
+  type: NodePort
