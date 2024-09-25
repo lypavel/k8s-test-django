@@ -22,7 +22,7 @@ spec:
       volumes:
         - name: ssl-cert-volume
           secret:
-            secretName: ssl-cert-secret
+            secretName: pg-root-cert
             defaultMode: 384
       containers:
       - image: ubuntu:22.04

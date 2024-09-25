@@ -2,7 +2,7 @@
 
 Примеры всех манифестов вы можете найти [здесь](../../../kubernetes/dev/yc-sirius/edu-evil-panini).
 
-## Подготовка к развёртыванию
+## Получение доступа к кластеру
 
 1. Получите доступ к кластеру у его администратора.
 2. Установите и инициализируйте [Yandex Cloud CLI](https://yandex.cloud/ru/docs/cli/quickstart#install).
@@ -20,15 +20,15 @@
 
 ## Подключение к PostgreSQL
 
-1. Проверьте, присутствует ли в вашем `namespace` секрет с ssl сертификатом для PostgreSQL. Если присутствует, переходите сразу к п.4. Если нет, то получите ваш ssl сертификат [по этой инструкции](https://yandex.cloud/ru/docs/managed-postgresql/operations/connect#get-ssl-cert).
+1. Проверьте, присутствует ли в вашем `namespace` секрет с ssl сертификатом для PostgreSQL (вероятнее всего, он будет называться `pg-root-cert`). Если присутствует, переходите сразу к п.4. Если нет, то получите ваш ssl сертификат [по этой инструкции](https://yandex.cloud/ru/docs/managed-postgresql/operations/connect#get-ssl-cert).
 2. Создайте YAML конфигурацию для `Secret` с сертификатом:
     ```yaml
     apiVersion: v1
     kind: Secret
     metadata:
-      name: ssl-cert-secret
+      name: pg-root-secret
     data:
-      root.crt: <base64_encoded_ssl_certificate>
+      root.crt: <base64_ssl_certificate>
     ```
 4. Создайте сущность `Secret` с помощью:
     ```bash
@@ -60,7 +60,7 @@
           volumes:
             - name: ssl-cert-volume
               secret:
-                secretName: ssl-cert-secret  # название сущности Secret с сертификатом
+                secretName: pg-root-secret  # название сущности Secret с сертификатом
                 defaultMode: 384  # обязательные права rw------- для сертификатов
           containers:
           - image: ubuntu:22.04
@@ -104,65 +104,222 @@ docker push <docker_username>/<image_name>:<commit_hash>
 
 Теперь вы можете использовать этот образ в своих манифестах k8s.
 
-## Запуск nginx
+## Добавление переменных окружения
 
-1. Создайте YAML конфигурацию для `Deployment`
+1. Создайте `YAML` файл c чувствительными переменными:
+
+    ```yaml
+    apiVersion: v1
+    kind: Secret
+    metadata:
+      name: django-secrets
+    type: Opaque
+    data:
+      SECRET_KEY: 'base64_secret_key'
+      ALLOWED_HOSTS: 'base64_allowed_hosts'
+    ```
+
+Все значения переменных должны быть закодированы в `BASE64`.
+
+2. Создайте `YAML` файл с обычными переменными:
+
+    ```yaml
+    apiVersion: v1
+    kind: ConfigMap
+    metadata:
+      name: django-config
+    data:
+      DEBUG: 'False'
+    ```
+
+3. Создайте сущности `Secret` и `ConfigMap` в вашем кластере:
+    ```bash
+    kubectl apply -f path/to/secrets.yaml
+    kubectl apply -f path/to/configmap.yaml
+    ```
+
+## Создание Deployment 
+
+2. Пропишите свою конфигурацию в YAML файл:
     ```yaml
     apiVersion: apps/v1
     kind: Deployment
     metadata:
-      name: nginx-deployment
-      labels:
-        app.kubernetes.io/name: nginx
-        app.kubernetes.io/instance: nginx-dev
-        app.kubernetes.io/version: '1.0.0'
-        app.kubernetes.io/component: backend
-        app.kubernetes.io/part-of: k8s-test-django
-        app.kubernetes.io/managed-by: manual
+    name: django-app-deployment
+    labels:
+      app.kubernetes.io/name: django-app
+      app.kubernetes.io/instance: django-app-dev
+      app.kubernetes.io/version: '1.0.0'
+      app.kubernetes.io/component: backend
+      app.kubernetes.io/part-of: k8s-test-django
+      app.kubernetes.io/managed-by: manual
     spec:
-      replicas: 1
-      selector:
-        matchLabels:
-          app: nginx
-      template:
-        metadata:
-          labels:
-            app: nginx
-        spec:
-          containers:
-            - name: nginx
-              image: nginx:1.14.2
-              imagePullPolicy: IfNotPresent
-              ports:
-                - containerPort: 80
+    replicas: 2
+    selector:
+      matchLabels:
+      app: django-app
+    template:
+      metadata:
+      labels:
+      app: django-app
+      spec:
+      containers:
+        - name: django-app
+          image: lypavel/django_app:latest  # образ из Docker Hub
+          imagePullPolicy: IfNotPresent
+          envFrom:
+            - secretRef:
+              name: django-secrets  # имя сущности Secrets
+            - configMapRef:
+              name: django-config  # имя сущности ConfigMap
+          env:
+            - name: DATABASE_URL
+              valueFrom:
+                secretKeyRef:
+                  name: postgres  # настроенный администратором Secret с данными для подключения к СУБД
+                  key: dsn  # переменная с URL для подключения
+          ports:
+            - containerPort: 80
     ```
-
-2. Создайте сущность `Deployment`
+3. Создайте сущность `Deployment` в кластере:
     ```bash
-    kubectl apply -f path/to/nginx/deployment.yaml
+    kubectl apply -f path/to/deployment.yaml
     ```
 
-3. Создайте YAML конфигурацию для `Service`
+## Применение миграций
+
+1. Пропишите свою конфигурацию в YAML файл:
+    ```yaml
+    apiVersion: batch/v1
+    kind: Job
+    metadata:
+    name: django-migrate-job
+    spec:
+    backoffLimit: 4
+    activeDeadlineSeconds: 60
+    ttlSecondsAfterFinished: 3600
+    template:
+      spec:
+      containers:
+        - name: django-migrate
+          image: lypavel/django_app:latest  # образ из Docker Hub
+          imagePullPolicy: IfNotPresent
+          command: ['python', 'manage.py', 'migrate', '--noinput']
+          envFrom:
+            - secretRef:
+              name: django-secrets
+            - configMapRef:
+              name: django-config
+          env:
+            - name: DATABASE_URL
+              valueFrom:
+                secretKeyRef:
+                  name: postgres  # настроенный администратором Secret с данными для подключения к СУБД
+                  key: dsn  # переменная с URL для подключения
+      restartPolicy: OnFailure
+    ```
+
+2. Создайте сущность Job. После создания она сразу же запустится и применит миграции.
+    ```bash
+    kubectl apply -f path/to/migrate/job.yaml
+    ```
+3. Для отслеживания статуса Job используйте:
+    ```bash
+    kubectl get job
+    ```
+    Она должна иметь статус `Completed`.
+
+## Создание superuser
+
+1. Получите список подов с помощью:
+    ```bash
+    kubectl get pods
+    ```
+2. Выполните вход в любой из подов, принадлежащих `deployment` с джанго:
+    ```bash
+    kubectl exec -it <django_pod_name> -- /bin/bash
+    ```
+3. Создайте superuser с помощью:
+    ```bash
+    python manage.py createsuperuser
+    ```
+4. Выйдите из пода:
+    ```bash
+    exit
+    ```
+
+## Создание Service
+
+1. Пропишите свою конфигурацию в YAML файл:
     ```yaml
     apiVersion: v1
     kind: Service
     metadata:
-      name: nginx-service
-      labels:
-        app.kubernetes.io/name: nginx-service
-        app.kubernetes.io/instance: nginx-service-dev
+    name: django-app-service
+    labels:
+      app.kubernetes.io/name: django-app-service
+      app.kubernetes.io/instance: django-app-service-dev
     spec:
-      selector:
-        app: nginx
-      ports:
-        - protocol: TCP
-          port: 80
-          targetPort: 80
-          nodePort: 30331  # NodePort, на который ALB распределяет запросы от вашего домена
-      type: NodePort
+    selector:
+      app: django-app
+    ports:
+      - protocol: TCP
+        port: 80
+        targetPort: 80
+        nodePort: 30331  # NodePort, на который ALB распределяет запросы от вашего домена
+    type: NodePort
     ```
-4. Создайте сущность `Service`
+2. Создайте сущность Service с помощью:
     ```bash
-    kubectl apply -f path/to/nginx/service.yaml
+    kubectl apply -f path/to/service.yaml
     ```
-5. Nginx будет доступен по вашему домену. Обычно это домен вида `<your_namespace>.sirius-k8s.dvmn.org`.
+
+## Регулярная очистка сессий с помощью CronJob
+
+1. Пропишите свою конфигурацию в YAML файл:
+    ```yaml
+    apiVersion: batch/v1
+    kind: CronJob
+    metadata:
+    name: django-clearsessions-cronjob
+    spec:
+    schedule: '0 0 7,14,21,28 * *'
+    startingDeadlineSeconds: 360
+    jobTemplate:
+      spec:
+      ttlSecondsAfterFinished: 3600
+      template:
+        spec:
+        containers:
+          - name: clearsessions
+          image: lypavel/django_app:latest  # образ из Docker Hub
+          command: ['python', 'manage.py', 'clearsessions']
+          imagePullPolicy: IfNotPresent
+          envFrom:
+            - secretRef:
+              name: django-secrets
+            - configMapRef:
+              name: django-config
+          env:
+            - name: DATABASE_URL
+            valueFrom:
+              secretKeyRef:
+                name: postgres
+                key: dsn
+        restartPolicy: OnFailure
+      backoffLimit: 4
+    ```
+2. Создайте сущность CronJob с помощью команды:
+    ```bash
+    kubectl apply -f path/to/cronjob.yaml
+    ```
+    Эта задача будет производить очистку сессий 7, 14, 21 и 28 числа каждого месяца (примерно раз в неделю).
+
+3. (опционально) Вы можете запустить задачу в любое время с помощью
+    ```bash
+    kubectl create job --from=cronjob/<cronjob_name> <job_name>
+    ```
+
+## Доступ к сайту
+
+После выполнения всех вышеописанных действий сайт будет доступен по вашему домену. Обычно это домен вида `<your_namespace>.sirius-k8s.dvmn.org`.
